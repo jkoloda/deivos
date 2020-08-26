@@ -2,14 +2,16 @@ import unittest
 import numpy as np
 import tensorflow as tf
 from deivos.architectures.squeezenet import (
+    default_preprocessor,
     expand,
     fire_module,
+    get_model_v10,
     squeeze,
 )
 
 
 class TestLayers(unittest.TestCase):
-    """Tester for image SqueezeNet."""
+    """Tester for SqueezeNet architecture."""
 
     def setUp(self):
         self.batch_size = 16
@@ -18,7 +20,9 @@ class TestLayers(unittest.TestCase):
         self.channels = 20
         self.input_shape = (self.batch_size, self.rows,
                             self.cols, self.channels)
+        self.default_input_shape = (self.batch_size, 227, 227, 3)
         self.inputs = tf.random.normal(shape=self.input_shape)
+        self.default_inputs = tf.random.normal(shape=self.default_input_shape)
 
     def test_squeeze(self):
         """Test squeeze module."""
@@ -56,15 +60,44 @@ class TestLayers(unittest.TestCase):
         for squeeze_expand_ratio in [2, 3, 4]:
             # Expand squeezed dimension for both 1x1 and 3x3 filters
             filters_out = squeeze_expand_ratio * 2 * filters_in
+            # No bypass
             output_shape = (self.batch_size, self.rows, self.cols, filters_out)
             outputs = fire_module(self.inputs, name='',
                                   squeeze_filters=filters_in, bypass=False,
                                   squeeze_expand_ratio=squeeze_expand_ratio)
             self.assertTrue(outputs.shape == tf.TensorShape(output_shape))
+            # Complex bypass
             outputs = fire_module(self.inputs, name='',
                                   squeeze_filters=filters_in, bypass=True,
                                   squeeze_expand_ratio=squeeze_expand_ratio)
             self.assertTrue(outputs.shape == tf.TensorShape(output_shape))
+
+        # Simple bypass
+        for squeeze_expand_ratio in [2, 4, 5]:
+            filters_in = self.channels//squeeze_expand_ratio
+            # Expand squeezed dimension for both 1x1 and 3x3 filters
+            filters_out = squeeze_expand_ratio * 2 * filters_in
+            output_shape = (self.batch_size, self.rows, self.cols, filters_out)
+            outputs = fire_module(self.inputs, name='',
+                                  squeeze_filters=filters_in, bypass=True,
+                                  squeeze_expand_ratio=squeeze_expand_ratio)
+            self.assertTrue(outputs.shape == tf.TensorShape(output_shape))
+            print(filters_out, self.channels)
+
+    def test_default_preprocessor(self):
+        """Test deafult preprocessor."""
+        # Default input
+        outputs = default_preprocessor(self.default_inputs)
+        self.assertTrue(outputs.shape == (self.batch_size, 55, 55, 96))
+        # Not default input
+        with self.assertRaises(AssertionError):
+            outputs = default_preprocessor(self.inputs)
+
+    def test_get_model_v10(self):
+        model = get_model_v10(num_classes=10)
+        model.summary()
+
+
     #
     #
     # def test_squeezenet(self):

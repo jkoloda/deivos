@@ -6,7 +6,7 @@ References
 "SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB
 model size", arXiv, Nov. 2016.
 
-[2] Online: https://github.com/DeepScale/SqueezeNet
+[2] Online: https://github.com/forresti/SqueezeNet/tree/master/SqueezeNet_v1.0
 
 """
 
@@ -56,8 +56,7 @@ def squeeze(x, name, filters):
                             kernel_size=(1, 1),
                             strides=(1, 1),
                             activation='relu',
-                            padding='same',
-                            name=name+'squeeze',
+                            name=name+'_squeeze',
                             )(x)
     return squeeze_module
 
@@ -92,9 +91,10 @@ def expand(x, name, filters):
                         kernel_size=(1, 1),
                         strides=(1, 1),
                         activation='relu',
-                        padding='same',
                         name=name+'_expand_1x1',
                         )(x)
+    # Reference uses zero padding for 3x3 filters, see Sec. 3.1.1 [1],
+    # here for simplicity 'same' padding is used
     expand_3x3 = Conv2D(filters=filters,
                         kernel_size=(3, 3),
                         strides=(1, 1),
@@ -161,13 +161,135 @@ def fire_module(x,
                             kernel_size=(1, 1),
                             strides=(1, 1),
                             activation='relu',
-                            padding='same',
                             name=name+'_bypass',
                             )(x)
             fire = Add()([bypass, fire])
 
     return fire
 
+
+def default_preprocessor(x):
+    """Apply default preprocessing of input data according to [1].
+
+    Parameters
+    x : tensor
+        Default input tensor with dimensions (batch_size, 227, 227, 3).
+
+    Returns
+    -------
+    processed : tensor
+        Processed input tensor (image) with size (batch_size, 55, 55, 96),
+        according to [1] (see Table 1).
+
+    ----------
+    """
+    assert x.shape[1:] == (227, 227, 3)
+    processed = Conv2D(filters=96,
+                       kernel_size=(7, 7),
+                       strides=(2, 2),
+                       activation='relu',
+                       padding='valid',
+                       name='conv1',
+                       )(x)
+    processed = MaxPooling2D()(processed)
+    return processed
+
+
+def set_bypass(bypass_type=None):
+    """Set bypass flag for each fire module in SqueezeNet architecture.
+
+    Parameters
+    ----------
+    bypass_type : {None, 'simple', 'complex'}
+        Bypass type to be applied, see Fig. 2 [1] for more detail.
+
+    Returns
+    -------
+    bypass : dict
+        Dictionary of bypass values for each fire module, e.g.,
+        if bypass['fire1'] is True then bypass is applied to fire module 1,
+        see Fig. 2 [1] for more detail.
+
+    """
+    bypass = {'fire1': False, 'fire2': False, 'fire3': False, 'fire4': False,
+              'fire5': False, 'fire6': False, 'fire7': False, 'fire8': False,
+              'fire9': False}
+    if bypass_type in ['simple', 'complex']:
+        bypass['fire3'] = True
+        bypass['fire5'] = True
+        bypass['fire7'] = True
+        bypass['fire9'] = True
+
+    if bypass_type == 'complex':
+        bypass['fire2'] = True
+        bypass['fire4'] = True
+        bypass['fire6'] = True
+        bypass['fire8'] = True
+
+    return bypass
+
+
+def get_model_v10(num_classes, preprocessing=None, bypass_type=None):
+    """Create SqueezeNet architecture as described in [1].
+
+    This is v1.0 implementation, it corresponds to original paper
+    description. Check [2] for more implementation information.
+    Also, in Table 1 [1] the output size of input image is incorrect,
+    it should be 227x227 (see [2]) and not 224x224.
+
+    Parameters
+    ----------
+    preprocessing : model
+        Input preprocessing module that adapts input shape to what
+        SqueezeNet expects. If None, SqueezeNet uses Conv2D and MaxPool as
+        described in Table 1 [1] and input shape is fixed to 227x227x3.
+        Preprocessing module must output data with size (55x55x96) which
+        is input to first fire module (fire2 in Table 1 [1]).
+        Example: input = Input(shape=(110, 110, 3))
+                 output = Conv2D(96, (3, 3), (2,2))(input)
+                 preprocessing = Model(input, output)
+
+    num_classes : int
+        Number of classes to detect.
+
+    Returns
+    -------
+    model : model
+        Keras model of SqueezeNet architecture.
+
+    """
+    bypass = set_bypass(bypass_type=bypass_type)
+    if preprocessing is None:
+        inputs = Input(shape=(227, 227, 3))
+        net = default_preprocessor(inputs)
+    else:
+        pass
+        # inputs = preprocessing.input
+        # net = preprocessing.output
+        # assert net.get_shape()[1:] == (55, 55, 96)
+    net = fire_module(net, 'fire2', 16, bypass['fire1'])
+    net = fire_module(net, 'fire3', 16, bypass['fire2'])
+    net = fire_module(net, 'fire4', 32, bypass['fire3'])
+    net = MaxPooling2D()(net)
+
+    net = fire_module(net, 'fire5', 32, bypass['fire5'])
+    net = fire_module(net, 'fire6', 48, bypass['fire6'])
+    net = fire_module(net, 'fire7', 48, bypass['fire7'])
+    net = fire_module(net, 'fire8', 64, bypass['fire8'])
+    net = MaxPooling2D()(net)
+
+    net = fire_module(net, 'fire9', 64, bypass=bypass['fire9'])
+    net = Conv2D(filters=num_classes,
+                 kernel_size=(1, 1),
+                 strides=(1, 1),
+                 activation='relu',
+                 name='conv10',
+                 )(net)
+    net = AveragePooling2D(pool_size=(13, 13))(net)
+    net = Reshape((num_classes,))(net)
+    net = Softmax()(net)
+    model = Model(inputs, net)
+    return model
 
 # class SqueezeNet():
 #
@@ -204,79 +326,6 @@ def fire_module(x,
 #                                             preprocessing=preprocessing)
 #         else:
 #             raise ValueError('SqueezeNet version not valid.')
-#
-#
-#     @staticmethod
-#     def get_model_v10(num_classes, preprocessing=None):
-#         """ Create SqueezeNet architecture as described in [1].
-#
-#         This is v1.0 implementation, it corresponds to original paper
-#         description with complex bypass. Check [2] for more implementation
-#         information. Also, in Table 1 [1] the output size of input image is
-#         incorrect, it should be 227x227 (see [2]) and not 224x224.
-#
-#         Parameters
-#         ----------
-#         preprocessing : keras.engine.training.Model
-#             Input preprocessing module that adapts input shape to what
-#             SqueezeNet expects. If None, SqueezeNet uses Conv2D and MaxPool as
-#             described in Table 1 [1] and input shape is fixed to 227x227x3.
-#             Preprocessing module must output data with size (55x55x96) which
-#             is the input to the first fire module (fire2 in Table 1 [1]).
-#             Example: input = Input(shape=(110, 110, 3))
-#                      output = Conv2D(96, (3, 3), (2,2))(input)
-#                      preprocessing = Model(input, output)
-#
-#         num_classes : int
-#             Number of classes to detect.
-#
-#         Returns
-#         -------
-#         model : keras.models.Model
-#             Keras model of SqueezeNet architecture.
-#
-#         """
-#         if preprocessing is None:
-#             input = Input(shape=(227, 227, 3))
-#             net = Conv2D(filters=96,
-#                          kernel_size=(7, 7),
-#                          strides=(2, 2),
-#                          activation='relu',
-#                          padding='valid',
-#                          name='conv1',
-#                          )(input)
-#             net = MaxPooling2D()(net)
-#         else:
-#             input = preprocessing.input
-#             net = preprocessing.output
-#             assert net.get_shape()[1:] == (55, 55, 96)
-#
-#
-#         net = fire_module(net, name='fire2', squeeze_filters=32, bypass=True)
-#         net = fire_module(net, name='fire3', squeeze_filters=32, bypass=True)
-#         net = fire_module(net, name='fire4', squeeze_filters=64, bypass=True)
-#         net = MaxPooling2D()(net)
-#
-#         net = fire_module(net, name='fire5', squeeze_filters=64, bypass=True)
-#         net = fire_module(net, name='fire6', squeeze_filters=64, bypass=True)
-#         net = fire_module(net, name='fire7', squeeze_filters=96, bypass=True)
-#         net = fire_module(net, name='fire8', squeeze_filters=128, bypass=True)
-#         net = MaxPooling2D()(net)
-#
-#         net = fire_module(net, name='fire9', squeeze_filters=128, bypass=True)
-#         net = Conv2D(filters=num_classes,
-#                      kernel_size=(1, 1),
-#                      strides=(1, 1),
-#                      activation='relu',
-#                      padding='same',
-#                      name='conv10',
-#                      )(net)
-#         net = AveragePooling2D(pool_size=(13, 13))(net)
-#         net = Reshape((num_classes,))(net)
-#         net = Softmax()(net)
-#         model = Model(input, net)
-#         return model
-#
 #
 #     @staticmethod
 #     def get_model_v11(preprocessing=None):
