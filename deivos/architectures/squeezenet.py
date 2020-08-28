@@ -13,16 +13,12 @@ model size", arXiv, Nov. 2016.
 from tensorflow.keras.layers import (
     Add,
     AveragePooling2D,
-    BatchNormalization,
     Concatenate,
     Conv2D,
-    Conv2DTranspose,
-    Dense,
     Input,
-    MaxPooling2D,
+    MaxPool2D,
     Reshape,
     Softmax,
-    UpSampling2D,
 )
 from tensorflow.keras.models import Model
 
@@ -168,10 +164,11 @@ def fire_module(x,
     return fire
 
 
-def default_preprocessor(x):
+def default_preprocessor(x, version='1.0'):
     """Apply default preprocessing of input data according to [1].
 
     Parameters
+    ----------
     x : tensor
         Default input tensor with dimensions (batch_size, 227, 227, 3).
 
@@ -181,17 +178,25 @@ def default_preprocessor(x):
         Processed input tensor (image) with size (batch_size, 55, 55, 96),
         according to [1] (see Table 1).
 
-    ----------
     """
+    if version == '1.0':
+        filters = 96
+        kernel_size = (7, 7)
+    elif version == '1.1':
+        filters = 64
+        kernel_size = (3, 3)
+    else:
+        raise ValueError('Not valid SqueezeNet version.')
+
     assert x.shape[1:] == (227, 227, 3)
-    processed = Conv2D(filters=96,
-                       kernel_size=(7, 7),
+    processed = Conv2D(filters=filters,
+                       kernel_size=kernel_size,
                        strides=(2, 2),
                        activation='relu',
                        padding='valid',
                        name='conv1',
                        )(x)
-    processed = MaxPooling2D()(processed)
+    processed = MaxPool2D(pool_size=(3, 3), strides=(2, 2))(processed)
     return processed
 
 
@@ -230,12 +235,10 @@ def set_bypass(bypass_type=None):
 
 
 def get_model_v10(num_classes, preprocessing=None, bypass_type=None):
-    """Create SqueezeNet architecture as described in [1].
+    """Create SqueezeNet architecture as described in [1], version 1.0.
 
     This is v1.0 implementation, it corresponds to original paper
     description. Check [2] for more implementation information.
-    Also, in Table 1 [1] the output size of input image is incorrect,
-    it should be 227x227 (see [2]) and not 224x224.
 
     Parameters
     ----------
@@ -251,6 +254,9 @@ def get_model_v10(num_classes, preprocessing=None, bypass_type=None):
 
     num_classes : int
         Number of classes to detect.
+
+    bypass_type : {None, 'simple', 'complex'}
+        Bypass type to be applied, see Fig. 2 [1] for more detail.
 
     Returns
     -------
@@ -270,13 +276,13 @@ def get_model_v10(num_classes, preprocessing=None, bypass_type=None):
     net = fire_module(net, 'fire2', 16, bypass['fire1'])
     net = fire_module(net, 'fire3', 16, bypass['fire2'])
     net = fire_module(net, 'fire4', 32, bypass['fire3'])
-    net = MaxPooling2D()(net)
+    net = MaxPool2D(pool_size=(3, 3), strides=(2, 2))(net)
 
     net = fire_module(net, 'fire5', 32, bypass['fire5'])
     net = fire_module(net, 'fire6', 48, bypass['fire6'])
     net = fire_module(net, 'fire7', 48, bypass['fire7'])
     net = fire_module(net, 'fire8', 64, bypass['fire8'])
-    net = MaxPooling2D()(net)
+    net = MaxPool2D(pool_size=(3, 3), strides=(2, 2))(net)
 
     net = fire_module(net, 'fire9', 64, bypass=bypass['fire9'])
     net = Conv2D(filters=num_classes,
@@ -291,42 +297,76 @@ def get_model_v10(num_classes, preprocessing=None, bypass_type=None):
     model = Model(inputs, net)
     return model
 
-# class SqueezeNet():
+
+# def get_model_v11(num_classes, preprocessing=None, bypass_type=None):
+#     """Create SqueezeNet architecture version 1.1 as described in [2]."""
+#     bypass = set_bypass(bypass_type=bypass_type)
+#     if preprocessing is None:
+#         inputs = Input(shape=(227, 227, 3))
+#         net = default_preprocessor(inputs)
+#     else:
+#         pass
+#         # inputs = preprocessing.input
+#         # net = preprocessing.output
+#         # assert net.get_shape()[1:] == (55, 55, 96)
+#     net = fire_module(net, 'fire2', 16, bypass['fire1'])
+#     net = fire_module(net, 'fire3', 16, bypass['fire2'])
+#     net = fire_module(net, 'fire4', 32, bypass['fire3'])
+#     net = MaxPooling2D()(net)
 #
-#     @staticmethod
-#     def get_model(num_classes, preprocessing=None, version='1.0'):
-#         """ Create SqueezeNet architecture.
+#     net = fire_module(net, 'fire5', 32, bypass['fire5'])
+#     net = fire_module(net, 'fire6', 48, bypass['fire6'])
+#     net = fire_module(net, 'fire7', 48, bypass['fire7'])
+#     net = fire_module(net, 'fire8', 64, bypass['fire8'])
+#     net = MaxPooling2D()(net)
 #
-#         Parameters
-#         ----------
-#         num_classes : int
-#             Number of classes to detect.
-#
-#         preprocessing : keras.engine.training.Model
-#             Input preprocessing module that adapts input shape to what
-#             SqueezeNet expects. See get_model_v10 and get_model_v11 for more
-#             details.
-#
-#         version : str, {'1.0', '1.1'}
-#             Version of SqueezeNet to use. Version '1.0' corresopnds to original
-#             paper implementation [1], version '1.1' is a variation thereof
-#             which 2.4x smaller [2].
-#
-#         Returns
-#         -------
-#         model : keras.models.Model
-#             Keras model of SqueezeNet architecture.
-#
-#         """
-#         if version == '1.0':
-#             return SqueezeNet.get_model_v10(num_classes=num_classes,
-#                                             preprocessing=preprocessing)
-#         elif version == '1.1':
-#             return SqueezeNet.get_model_v11(num_classes=num_classes,
-#                                             preprocessing=preprocessing)
-#         else:
-#             raise ValueError('SqueezeNet version not valid.')
-#
-#     @staticmethod
-#     def get_model_v11(preprocessing=None):
-#         raise NotImplementedError()
+#     net = fire_module(net, 'fire9', 64, bypass=bypass['fire9'])
+#     net = Conv2D(filters=num_classes,
+#                  kernel_size=(1, 1),
+#                  strides=(1, 1),
+#                  activation='relu',
+#                  name='conv10',
+#                  )(net)
+#     net = AveragePooling2D(pool_size=(13, 13))(net)
+#     net = Reshape((num_classes,))(net)
+#     net = Softmax()(net)
+#     model = Model(inputs, net)
+#     return model
+
+
+class SqueezeNet():
+    """Class to build SqueezeNet models."""
+
+    @staticmethod
+    def get_model(num_classes, preprocessing=None, version='1.0'):
+        """Create SqueezeNet architecture.
+
+        Parameters
+        ----------
+        num_classes : int
+            Number of classes to detect.
+
+        preprocessing : model
+            Input preprocessing module that adapts input shape to what
+            SqueezeNet expects. See get_model_v10 and get_model_v11 for more
+            details.
+
+        version : str, {'1.0', '1.1'}
+            Version of SqueezeNet to use. Version '1.0' corresopnds to original
+            paper implementation [1], version '1.1' is a variation thereof
+            which is 2.4x smaller [2].
+
+        Returns
+        -------
+        model : model
+            Keras model of SqueezeNet architecture.
+
+        """
+        if version == '1.0':
+            return get_model_v10(num_classes=num_classes,
+                                 preprocessing=preprocessing)
+        elif version == '1.1':
+            return get_model_v11(num_classes=num_classes,
+                                 preprocessing=preprocessing)
+        else:
+            raise ValueError('SqueezeNet version not valid.')

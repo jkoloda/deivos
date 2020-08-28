@@ -1,3 +1,5 @@
+"""Tester for squeezenet module."""
+
 import unittest
 import numpy as np
 import tensorflow as tf
@@ -12,6 +14,8 @@ from deivos.architectures.squeezenet import (
 
 class TestLayers(unittest.TestCase):
     """Tester for SqueezeNet architecture."""
+
+    # pylint: disable=too-many-instance-attributes
 
     def setUp(self):
         self.batch_size = 16
@@ -82,21 +86,43 @@ class TestLayers(unittest.TestCase):
                                   squeeze_filters=filters_in, bypass=True,
                                   squeeze_expand_ratio=squeeze_expand_ratio)
             self.assertTrue(outputs.shape == tf.TensorShape(output_shape))
-            print(filters_out, self.channels)
 
     def test_default_preprocessor(self):
         """Test deafult preprocessor."""
-        # Default input
-        outputs = default_preprocessor(self.default_inputs)
+        # Version 1.0, default input
+        outputs = default_preprocessor(self.default_inputs, version='1.0')
         self.assertTrue(outputs.shape == (self.batch_size, 55, 55, 96))
         # Not default input
         with self.assertRaises(AssertionError):
-            outputs = default_preprocessor(self.inputs)
+            outputs = default_preprocessor(self.inputs, '1.0')
+
+        # # Version 1.1, default input
+        # outputs = default_preprocessor(self.default_inputs, version='1.1')
+        # self.assertTrue(outputs.shape == (self.batch_size, 55, 55, 64))
+        # # Not default input
+        # with self.assertRaises(AssertionError):
+        #     outputs = default_preprocessor(self.inputs, version='1.1')
 
     def test_get_model_v10(self):
-        model = get_model_v10(num_classes=10)
-        model.summary()
+        """Test SqueezeNet v1.0."""
+        layers = {'fire2_concat': (None, 55, 55, 128),
+                  'fire3_concat': (None, 55, 55, 128),
+                  'fire4_concat': (None, 55, 55, 256),
+                  'fire5_concat': (None, 27, 27, 256),
+                  'fire6_concat': (None, 27, 27, 384),
+                  'fire7_concat': (None, 27, 27, 384),
+                  'fire8_concat': (None, 27, 27, 512),
+                  'fire9_concat': (None, 13, 13, 512)}
 
+        for num_classes in [10, 100, 100]:
+            for bypass_type in [None, 'simple', 'complex']:
+                model = get_model_v10(num_classes=num_classes,
+                                      bypass_type=bypass_type)
+                for name, shape in layers.items():
+                    layer = model.get_layer(name)
+                    self.assertTrue(layer.output_shape == shape)
+                self.assertTrue(model.output_shape == (None, num_classes))
+                del model
 
     #
     #
