@@ -8,6 +8,7 @@ from deivos.architectures.squeezenet import (
     expand,
     fire_module,
     get_model_v10,
+    get_model_v11,
     squeeze,
 )
 
@@ -96,12 +97,12 @@ class TestLayers(unittest.TestCase):
         with self.assertRaises(AssertionError):
             outputs = default_preprocessor(self.inputs, '1.0')
 
-        # # Version 1.1, default input
-        # outputs = default_preprocessor(self.default_inputs, version='1.1')
-        # self.assertTrue(outputs.shape == (self.batch_size, 55, 55, 64))
-        # # Not default input
-        # with self.assertRaises(AssertionError):
-        #     outputs = default_preprocessor(self.inputs, version='1.1')
+        # Version 1.1, default input
+        outputs = default_preprocessor(self.default_inputs, version='1.1')
+        self.assertTrue(outputs.shape == (self.batch_size, 56, 56, 64))
+        # Not default input
+        with self.assertRaises(AssertionError):
+            outputs = default_preprocessor(self.inputs, version='1.1')
 
     def test_get_model_v10(self):
         """Test SqueezeNet v1.0."""
@@ -124,30 +125,30 @@ class TestLayers(unittest.TestCase):
                 self.assertTrue(model.output_shape == (None, num_classes))
                 del model
 
-    #
-    #
-    # def test_squeezenet(self):
-    #     model = SqueezeNet.get_model(num_classes=100)
-    #     self.assertTrue(model.layers[-1].output_shape == (None, 100))
-    #     model.compile(optimizer='nadam', loss='categorical_crossentropy')
-    #     del model
-    #
-    #     model = SqueezeNet.get_model(num_classes=100)
-    #     self.assertTrue(model.layers[-1].output_shape == (None, 100))
-    #     model.compile(optimizer='nadam', loss='categorical_crossentropy')
-    #     del model
-    #
-    #     input = Input(shape=(110, 110, 3))
-    #     output = Conv2D(filters=96,
-    #                     kernel_size=(3, 3),
-    #                     strides=(2, 2),
-    #                     activation='relu',
-    #                     padding='same',
-    #                     )(input)
-    #     prep = Model(input, output)
-    #     model = SqueezeNet.get_model(num_classes=2, preprocessing=prep)
-    #     self.assertTrue(model.layers[-1].output_shape == (None, 2))
-    #     del model
+    def test_get_model_v11(self):
+        """Test SqueezeNet v1.1."""
+        layers = {'fire2_concat': (None, 56, 56, 128),
+                  'fire3_concat': (None, 56, 56, 128),
+                  'fire4_concat': (None, 28, 28, 256),
+                  'fire5_concat': (None, 28, 28, 256),
+                  'fire6_concat': (None, 14, 14, 384),
+                  'fire7_concat': (None, 14, 14, 384),
+                  'fire8_concat': (None, 14, 14, 512),
+                  'fire9_concat': (None, 14, 14, 512)}
+
+        for num_classes in [10, 100, 100]:
+            for bypass_type in [None, 'simple', 'complex']:
+                model = get_model_v11(num_classes=num_classes,
+                                      bypass_type=bypass_type)
+                for name, shape in layers.items():
+                    layer = model.get_layer(name)
+                    self.assertTrue(layer.output_shape == shape)
+                self.assertTrue(model.output_shape == (None, num_classes))
+                del model
+
+    def test_squeezenet(self):
+        # TODO: Check that corresponding get models have been called
+        pass
 
 
 if __name__ == '__main__':

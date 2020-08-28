@@ -12,7 +12,7 @@ model size", arXiv, Nov. 2016.
 
 from tensorflow.keras.layers import (
     Add,
-    AveragePooling2D,
+    GlobalAveragePooling2D,
     Concatenate,
     Conv2D,
     Input,
@@ -267,7 +267,7 @@ def get_model_v10(num_classes, preprocessing=None, bypass_type=None):
     bypass = set_bypass(bypass_type=bypass_type)
     if preprocessing is None:
         inputs = Input(shape=(227, 227, 3))
-        net = default_preprocessor(inputs)
+        net = default_preprocessor(inputs, version='1.0')
     else:
         pass
         # inputs = preprocessing.input
@@ -291,47 +291,52 @@ def get_model_v10(num_classes, preprocessing=None, bypass_type=None):
                  activation='relu',
                  name='conv10',
                  )(net)
-    net = AveragePooling2D(pool_size=(13, 13))(net)
+    net = GlobalAveragePooling2D()(net)
     net = Reshape((num_classes,))(net)
     net = Softmax()(net)
     model = Model(inputs, net)
     return model
 
 
-# def get_model_v11(num_classes, preprocessing=None, bypass_type=None):
-#     """Create SqueezeNet architecture version 1.1 as described in [2]."""
-#     bypass = set_bypass(bypass_type=bypass_type)
-#     if preprocessing is None:
-#         inputs = Input(shape=(227, 227, 3))
-#         net = default_preprocessor(inputs)
-#     else:
-#         pass
-#         # inputs = preprocessing.input
-#         # net = preprocessing.output
-#         # assert net.get_shape()[1:] == (55, 55, 96)
-#     net = fire_module(net, 'fire2', 16, bypass['fire1'])
-#     net = fire_module(net, 'fire3', 16, bypass['fire2'])
-#     net = fire_module(net, 'fire4', 32, bypass['fire3'])
-#     net = MaxPooling2D()(net)
-#
-#     net = fire_module(net, 'fire5', 32, bypass['fire5'])
-#     net = fire_module(net, 'fire6', 48, bypass['fire6'])
-#     net = fire_module(net, 'fire7', 48, bypass['fire7'])
-#     net = fire_module(net, 'fire8', 64, bypass['fire8'])
-#     net = MaxPooling2D()(net)
-#
-#     net = fire_module(net, 'fire9', 64, bypass=bypass['fire9'])
-#     net = Conv2D(filters=num_classes,
-#                  kernel_size=(1, 1),
-#                  strides=(1, 1),
-#                  activation='relu',
-#                  name='conv10',
-#                  )(net)
-#     net = AveragePooling2D(pool_size=(13, 13))(net)
-#     net = Reshape((num_classes,))(net)
-#     net = Softmax()(net)
-#     model = Model(inputs, net)
-#     return model
+def get_model_v11(num_classes, preprocessing=None, bypass_type=None):
+    """Create SqueezeNet architecture version 1.1 as described in [2]."""
+    bypass = set_bypass(bypass_type=bypass_type)
+    if preprocessing is None:
+        inputs = Input(shape=(227, 227, 3))
+        net = default_preprocessor(inputs, version='1.1')
+    else:
+        pass
+        # inputs = preprocessing.input
+        # net = preprocessing.output
+        # assert net.get_shape()[1:] == (55, 55, 96)
+    net = fire_module(net, 'fire2', 16, bypass['fire1'])
+    net = fire_module(net, 'fire3', 16, bypass['fire2'])
+    # Padding is set since Caffe pooling works differently from Tensorflow
+    # https://stackoverflow.com/questions/40997185/ \
+    # differences-between-caffe-and-keras-when-applying-max-pooling
+    net = MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='same')(net)
+
+    net = fire_module(net, 'fire4', 32, bypass['fire3'])
+    net = fire_module(net, 'fire5', 32, bypass['fire5'])
+    # Padding is set since Caffe pooling works differently from Tensorflow
+    net = MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='same')(net)
+
+    net = fire_module(net, 'fire6', 48, bypass['fire6'])
+    net = fire_module(net, 'fire7', 48, bypass['fire7'])
+    net = fire_module(net, 'fire8', 64, bypass['fire8'])
+
+    net = fire_module(net, 'fire9', 64, bypass=bypass['fire9'])
+    net = Conv2D(filters=num_classes,
+                 kernel_size=(1, 1),
+                 strides=(1, 1),
+                 activation='relu',
+                 name='conv10',
+                 )(net)
+    net = GlobalAveragePooling2D()(net)
+    net = Reshape((num_classes,))(net)
+    net = Softmax()(net)
+    model = Model(inputs, net)
+    return model
 
 
 class SqueezeNet():
