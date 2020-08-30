@@ -26,8 +26,8 @@ from tensorflow.keras.layers import (
     SpatialDropout2D,
     UpSampling2D,
 )
-# from keras import backend as K
-# from keras.models import Model
+
+from deivos.layers import ZeroPaddingChannels
 
 
 def initial_block(x, num_filters=13):
@@ -173,47 +173,43 @@ def bottleneck_core(x, name, dilation=1, asymmetric=0, upsampling=False):
     # ReLU with additional parameter per feature map (see also Keras docu)
     x = PReLU(shared_axes=[1, 2], name=name+'_prelu')(x)
     return x
-#
-#
-# def bottleneck_merge(left, right):
-#     """ Merge (by adding) two tensors as specified in bottleneck layer [1].
-#
-#     Parameters
-#     ----------
-#     left : tensorflow.python.framework.ops.Tensor
-#         Left input tensor (residual branch). This tensor is eventually
-#         processed to match dimensions of right tensor. According to [1],
-#         expanding number of channels is done by zero padding, reducing number
-#         of channels is done by 1x1 convolution.
-#
-#     right : tensorflow.python.framework.ops.Tensor
-#         Right input tensor whose dimensions determine output dimensions.
-#
-#     Returns
-#     -------
-#     merge : tensorflow.python.framework.ops.Tensor
-#         Merged tensor.
-#
-#     """
-#     output_depth = K.int_shape(right)[-1]
-#     if K.int_shape(left)[-1] == output_depth:
-#         merge = Add()([left, right])
-#
-#     elif K.int_shape(left)[-1] < output_depth:
-#         # Zero padding, in [1] used for downsampling only
-#         left = ZeroPaddingChannelsLayer(output_depth)(left)
-#         merge = Add()([left, right])
-#
-#     else:
-#         # Squeezing, in [1] used for upsampling only
-#         left = Conv2D(filters=output_depth,
-#                       kernel_size=(1, 1),
-#                       strides=(1, 1),
-#                       padding='same',
-#                       use_bias=False,
-#                       )(left)
-#         merge = Add()([left, right])
-#     return merge
+
+
+def bottleneck_merge(left, right):
+    """Merge (by adding) two tensors as specified in bottleneck layer [1].
+
+    Parameters
+    ----------
+    left : tensor
+        Left input tensor (residual branch) as output of eventual MaxPooling
+        (see Fig. 2(b)[1]). This tensor is eventually processed to match
+        dimensions of right tensor. Expanding number of channels is done by
+        zero padding, reducing number of channels is done by 1x1 convolution.
+
+    right : tensor
+        Right input tensor whose dimensions determine output dimensions. This
+        tensor corresponds to step after regularizer (see Fig. 2(b)[1]).
+
+    Returns
+    -------
+    merge : tensor
+        Merged tensor.
+
+    """
+    if left.shape[-1] < right.shape[-1]:
+        # Zero padding, in [1] used for downsampling only
+        left = ZeroPaddingChannels(right.shape[-1])(left)
+
+    elif left.shape[-1] > right.shape[-1]:
+        # Squeezing, in [1] used for upsampling only
+        left = Conv2D(filters=right.shape[-1],
+                      kernel_size=(1, 1),
+                      strides=(1, 1),
+                      padding='same',
+                      use_bias=False,
+                      )(left)
+    merge = Add()([left, right])
+    return merge
 #
 #
 # def bottleneck(x, output_depth, name, dropout=None, downsampling=False,

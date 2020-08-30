@@ -7,7 +7,7 @@ import tensorflow as tf
 from deivos.architectures.enet import (
     # bottleneck,
     bottleneck_core,
-    # bottleneck_merge,
+    bottleneck_merge,
     # ENet,
     initial_block,
     knead,
@@ -37,7 +37,7 @@ class TestEnet(unittest.TestCase):
         self.assertTrue(outputs.shape == tf.TensorShape(output_shape))
 
     def test_knead(self):
-        """Test knead module. """
+        """Test knead module."""
         batch_size = 16
         rows = 24
         cols = 32
@@ -58,18 +58,18 @@ class TestEnet(unittest.TestCase):
             outputs = knead(inputs, output_depth, name='c', downsampling=True)
             self.assertTrue(outputs.shape == tf.TensorShape(output_shape_down))
 
-#
-#     def test_bottleneck_merge(self):
-#         right_shape = (16, 32, 32, 20)
-#         left_shapes = [(16, 32, 32, 20), (16, 32, 32, 15), (16, 32, 32, 30)]
-#
-#         right = K.random_normal(right_shape)
-#
-#         for left_shape in left_shapes:
-#             left = K.random_normal(left_shape)
-#             merge = bottleneck_merge(left, right)
-#             self.assertTrue(K.int_shape(merge) == K.int_shape(right))
-#
+    def test_bottleneck_merge(self):
+        """Test bottleneck merge method."""
+        right_shape = (16, 32, 32, 20)
+        left_shapes = [(16, 32, 32, 20), (16, 32, 32, 15), (16, 32, 32, 30)]
+
+        right = tf.random.normal(right_shape)
+
+        for left_shape in left_shapes:
+            left = tf.random.normal(left_shape)
+            merge = bottleneck_merge(left, right)
+            self.assertTrue(merge.shape == right.shape)
+
     def test_bottleneck_core(self):
         """Test bottleneck core module."""
         batch_size = 16
